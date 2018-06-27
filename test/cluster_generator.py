@@ -41,7 +41,9 @@ RING_SIZE = 2**32
 SETTLE_TIME = 5
 
 redis = local.get('./test/_binaries/redis-server', 'redis-server')
-dynomite = local.get('./test/_binaries/dynomite', 'src/dynomite')
+with local.cwd('src'):
+    # Removed './test/_binaries/dynomite'
+    dynomite = local.get('./dynomite')
 
 @contextmanager
 def launch_redis(ip):
@@ -129,14 +131,16 @@ class DynoSpec(namedtuple('DynoSpec', 'ip port dc rack token '
 
         with launch_redis(self.ip):
             logfile = 'logs/dynomite_{}.log'.format(self.ip)
-            dynomite_future = dynomite['-o', logfile, '-c', config_filename,
-                '-v6'] & BG(-9)
+            # Add '-v', '11' for maximum verbosity in logs
+            # Dynomite exits with status 1 on SIGINT, this is what we expect.
+            dynomite_future = dynomite['-v', '11', '-o', logfile, '-c', config_filename,
+                '-v6'] & BG(1)
 
             try:
                 yield DynoNode(self.ip)
             finally:
-                dynomite_future.proc.kill()
-                dynomite_future.wait()
+                dynomite_future.proc.send_signal(SIGINT)
+                return_code= dynomite_future.wait()
 
 
 @contextmanager
